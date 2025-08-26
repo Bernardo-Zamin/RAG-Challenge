@@ -1,8 +1,13 @@
 ### Upload PDF documents
 POST http://localhost:8000/documents
-Content-Type: multipart/form-data
+Content-Type: multipart/form-data; boundary=----WebKitFormBoundary7MA4YWxkTrZu0gW
 
-files=/Users/bernardozamin/Downloads/TRACTIAN/case_files/LB5001.pdf
+------WebKitFormBoundary7MA4YWxkTrZu0gW
+Content-Disposition: form-data; name="files"; filename="Untitled.pdf"
+Content-Type: application/pdf
+
+< /Users/bernardozamin/Documents/RAG-Challenge/Untitled.pdf
+------WebKitFormBoundary7MA4YWxkTrZu0gW--
 
 ###
 
@@ -11,7 +16,5 @@ POST http://localhost:8000/question
 Content-Type: application/json
 
 {
-  "question": "What is the color of the sky?"
+  "question": "What is the text about?"
 }
-
-
