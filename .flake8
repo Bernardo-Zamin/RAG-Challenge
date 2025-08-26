@@ -1,0 +1,14 @@
+#flake8-docstrings
+extend-ignore = E203
+docstring-convention = google
+
+max-complexity = 10
+max-line-length = 120
+
+percent-greedy=2
+format-greedy=2
+
+
+exclude =
+    .git,
+    __pycache__,
