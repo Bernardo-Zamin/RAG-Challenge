@@ -22,6 +22,19 @@ services:
       - ollama
     environment:
       - OLLAMA_HOST=http://ollama:11434
+  
+  ui:
+    image: rag-challenge-rag-api   # reusa a imagem já construída do backend
+    container_name: rag-ui
+    depends_on:
+      - rag-api
+    environment:
+      BACKEND_URL: "http://rag-api:8000"
+    ports:
+      - "8501:8501"
+    command: >
+      bash -lc "streamlit run RAG-Challenge/streamlit_app/ui.py
+      --server.port=8501 --server.address=0.0.0.0"
 
 volumes:
   ollama-data:
