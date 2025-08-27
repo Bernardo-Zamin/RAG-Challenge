@@ -18,3 +18,11 @@ Content-Type: application/json
 {
   "question": "What is the text about?"
 }
+
+### Ask a question
+POST http://localhost:8000/question
+Content-Type: application/json
+
+{
+  "question": "Qual a cor do ceu"
+}

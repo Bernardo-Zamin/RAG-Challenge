@@ -1,72 +1,69 @@
+# RAG-Challenge/streamlit_app/ui.py
 import streamlit as st
-from utils import upload_pdfs, ask_question
+from streamlit_app import utils
 
-st.set_page_config(page_title="RAG Challenge", page_icon="📄", layout="centered")
+st.set_page_config(page_title="RAG Challenge", page_icon="🧠", layout="centered")
 
-# --- Sidebar: Upload de PDFs ---
-with st.sidebar:
-    st.header("📄 Upload de documentos")
-    st.caption("Faça upload de um ou mais PDFs para indexação.")
-    uploaded = st.file_uploader(
-        "Selecionar PDFs",
-        type=["pdf"],
-        accept_multiple_files=True,
-        help="Os PDFs serão parseados e indexados para RAG."
-    )
-    if uploaded:
-        if st.button("Indexar PDFs"):
-            with st.spinner("Processando e indexando PDFs..."):
-                try:
-                    res = upload_pdfs(uploaded)
-                    st.success(
-                        f"✅ {res.get('documents_indexed', 0)} documento(s) indexado(s), "
-                        f"{res.get('total_chunks', 0)} chunk(s) adicionados."
-                    )
-                except Exception as e:
-                    st.error(f"Falha ao indexar: {e}")
-
-st.title("🤖 RAG Chatbot")
-st.caption("Pergunte sobre os documentos que você enviou.")
-
-# Estado da conversa
+# --- session boot ---
+if "session_id" not in st.session_state:
+    try:
+        st.session_state.session_id = utils.start_chat()
+    except Exception:
+        st.error("Backend ainda iniciando… tente novamente em alguns segundos.")
+        st.stop()
 if "messages" not in st.session_state:
     st.session_state.messages = []
 
-# Mostrar histórico
+st.sidebar.title("📄 Documents")
+new_chat = st.sidebar.button("🧹 New chat (reset vectors)")
+if new_chat:
+    st.session_state.session_id = utils.start_chat()
+    st.session_state.messages = []
+    st.sidebar.success("Session restarted. Vector DB cleared.")
+
+uploaded = st.sidebar.file_uploader(
+    "Upload PDF(s)",
+    type=["pdf"],
+    accept_multiple_files=True,
+    help="The PDFs will be indexed in the current session",
+)
+
+if uploaded and st.sidebar.button("Index PDFs"):
+    with st.spinner("Processing and indexing..."):
+        resp = utils.upload_documents(uploaded, st.session_state.session_id)
+    st.sidebar.success(
+        f"OK! {resp.get('documents_indexed',0)} doc(s), "
+        f"{resp.get('total_chunks',0)} chunks, "
+        f"{resp.get('indexed_points',0)} vectors."
+    )
+
+st.title("💬 Chat RAG")
 for m in st.session_state.messages:
     with st.chat_message(m["role"]):
         st.markdown(m["content"])
-        if m.get("references"):
-            with st.expander("🔎 Referências"):
-                for r in m["references"]:
-                    st.write(f"- {r}")
+        if m["role"] == "assistant" and m.get("references"):
+            with st.expander("🔎 Used parts (context)"):
+                for i, ref in enumerate(m["references"], start=1):
+                    st.markdown(f"**{i}.** {ref}")
 
-# Entrada do usuário
-prompt = st.chat_input("Digite sua pergunta...")
-if prompt:
-    st.session_state.messages.append({"role": "user", "content": prompt})
+user_msg = st.chat_input("Ask something about the PDFs…")
+if user_msg:
+    st.session_state.messages.append({"role": "user", "content": user_msg})
     with st.chat_message("user"):
-        st.markdown(prompt)
+        st.markdown(user_msg)
 
     with st.chat_message("assistant"):
-        with st.spinner("Consultando o backend..."):
-            try:
-                result = ask_question(prompt)
-                answer = result.get("answer", "Sem resposta.")
-                refs = result.get("references") or []
-
-                st.markdown(answer)
-                if refs:
-                    with st.expander("🔎 Referências"):
-                        for r in refs:
-                            st.write(f"- {r}")
-
-                st.session_state.messages.append(
-                    {"role": "assistant", "content": answer, "references": refs}
-                )
-            except Exception as e:
-                msg = f"Erro consultando backend: {e}"
-                st.error(msg)
-                st.session_state.messages.append(
-                    {"role": "assistant", "content": msg}
-                )
+        with st.spinner("Consulting…"):
+            resp = utils.ask_question(user_msg, st.session_state.session_id)
+        answer = resp.get("answer", "No answer.")
+        refs = resp.get("references", [])
+        st.markdown(answer)
+        if refs:
+            with st.expander("🔎 Used parts (context)"):
+                for i, ref in enumerate(refs, start=1):
+                    st.markdown(f"**{i}.** {ref}")
+        st.session_state.messages.append({
+            "role": "assistant",
+            "content": answer,
+            "references": refs
+        })

@@ -1,5 +1,5 @@
 """PDF parsing utilities for extracting and chunking text from PDF files."""
-
+import os
 import fitz
 from typing import List
 
@@ -38,3 +38,23 @@ def extract_text_and_chunk(
             chunks.append(current_chunk.strip())
 
     return chunks
+
+
+def extract_text_and_chunk_with_meta(path: str):
+    """
+    Extract text chunks from a PDF file and return them along with metadata.
+
+    Args:
+        path (str): The path to the PDF file.
+
+    Returns:
+        tuple: A tuple containing a list of text chunks and a metadata
+            dictionary.
+    """
+    chunks = extract_text_and_chunk(path)
+    meta = {
+        "file": os.path.basename(path),
+        "chunks": len(chunks),
+        "size_bytes": os.path.getsize(path),
+    }
+    return chunks, meta

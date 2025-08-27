@@ -1,39 +1,41 @@
-"""
-Utility functions for interacting with the backend API, including PDF upload
-and question submission.
-"""
-
+# RAG-Challenge/streamlit_app/utils.py
 import os
+import time
 import requests
 
+# Em container: http://rag-api:8000 ; fora do container você pode exportar BACKEND_URL
+API_BASE = os.getenv("BACKEND_URL", "http://rag-api:8000")
 
-def get_backend_url() -> str:
+def _post(url, **kwargs):
+    attempts = 12
+    last_err = None
+    for i in range(attempts):
+        try:
+            return requests.post(url, timeout=30, **kwargs)
+        except requests.RequestException as e:
+            last_err = e
+            time.sleep(1 + i)  # backoff
+    raise last_err
+
+def start_chat():
+    r = _post(f"{API_BASE}/start_chat")
+    r.raise_for_status()
+    return r.json()["session_id"]
+
+def upload_documents(files, session_id: str):
     """
-    Return the backend API URL.
-
-    Uses the BACKEND_URL environment variable or a default.
+    files: lista de st.uploadedfile.UploadedFile
     """
-    # In the Docker, let's set BACKEND_URL=http://rag-api:8000
-    return os.getenv("BACKEND_URL", "http://localhost:8000").rstrip("/")
+    files_payload = [
+        ("files", (f.name, f.getvalue(), "application/pdf"))
+        for f in files
+    ]
+    data = {"session_id": session_id}
+    r = _post(f"{API_BASE}/documents", files=files_payload, data=data)
+    r.raise_for_status()
+    return r.json()
 
-
-def upload_pdfs(files):
-    """Send the PDFs to the backend "/documents" (multipart/form-data)."""
-    url = f"{get_backend_url()}/documents"
-    multipart = []
-    for f in files:
-        multipart.append(
-            ("files", (f.name, f.getvalue(), "application/pdf"))
-        )
-    resp = requests.post(url, files=multipart, timeout=120)
-    resp.raise_for_status()
-    return resp.json()
-
-
-def ask_question(question: str):
-    """Send the question to the backend "/question"."""
-    url = f"{get_backend_url()}/question"
-    payload = {"question": question}
-    resp = requests.post(url, json=payload, timeout=120)
-    resp.raise_for_status()
-    return resp.json()
+def ask_question(question: str, session_id: str):
+    r = _post(f"{API_BASE}/question", json={"question": question, "session_id": session_id})
+    r.raise_for_status()
+    return r.json()

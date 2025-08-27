@@ -5,7 +5,7 @@ Generates responses using a specified model.
 
 import requests
 
-OLLAMA_URL = "http://ollama:11434/api/chat"
+OLLAMA_URL = "http://ollama:11434/api/chat"  # TODO:add env
 OLLAMA_MODEL = "tinyllama"
 
 def query_ollama(prompt: str) -> str:

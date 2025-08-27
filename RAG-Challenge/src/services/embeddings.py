@@ -1,71 +1,65 @@
-"""
-This module provides functions for embedding text chunks and searching for
-similar chunks using a FAISS index.
-"""
-
-from sentence_transformers import SentenceTransformer
-from src.vector_database import faiss_store
+import os
 import numpy as np
+from sentence_transformers import SentenceTransformer
+from qdrant_client import QdrantClient
+from qdrant_client.http import models as qm
 
-model = SentenceTransformer("all-MiniLM-L6-v2")
+QDRANT_URL = os.getenv("QDRANT_URL", "http://localhost:6333")
+EMB_MODEL = "all-MiniLM-L6-v2"
+DIMENSION = 384  # all-MiniLM-L6-v2
 
-index = faiss_store.load_faiss_index()
-chunks_db = faiss_store.load_chunks()
+_model = SentenceTransformer(EMB_MODEL)
+_qdrant = QdrantClient(url=QDRANT_URL, prefer_grpc=False)
 
+def _collection_name(session_id: str) -> str:
+    return f"session_{session_id}"
 
-def build_index_from_pdfs(pdf_dir: str = "RAG-Challenge/data/uploaded_pdfs"):
+def reset_session(session_id: str):
+    name = _collection_name(session_id)
+    # drop se existir; criar de novo
+    if name in [c.name for c in _qdrant.get_collections().collections]:
+        _qdrant.delete_collection(name)
+    _qdrant.recreate_collection(
+        collection_name=name,
+        vectors_config=qm.VectorParams(size=DIMENSION, distance=qm.Distance.COSINE),
+    )
+
+def add_chunks_to_index(chunks: list, session_id: str) -> int:
     """
-    Parseia os PDFs, gera embeddings dos textos extraídos e salva o índice FAISS e os chunks.
-
-    Args:
-        pdf_dir (str): Caminho para o diretório contendo os PDFs.
+    Indexa 'chunks' na coleção da sessão.
+    Retorna a quantidade de vetores inseridos.
     """
-    from src.services import pdf_parser  # Import interno para evitar import circular
+    if not chunks:
+        return 0
+    name = _collection_name(session_id)
+    # garante coleção (caso /start_chat não tenha sido chamado)
+    if name not in [c.name for c in _qdrant.get_collections().collections]:
+        reset_session(session_id)
 
-    print("[INFO] Extraindo texto dos PDFs...")
-    texts = pdf_parser.extract_text_from_pdfs(pdf_dir)
+    embs = _model.encode(chunks, convert_to_numpy=True).astype(np.float32)
+    points = [
+        qm.PointStruct(
+            id=i,
+            vector=emb.tolist(),
+            payload={"text": chunks[i]}
+        ) for i, emb in enumerate(embs)
+    ]
+    _qdrant.upsert(collection_name=name, points=points, wait=True)
+    return len(points)
 
-    if not texts:
-        print("[WARNING] Nenhum texto encontrado nos PDFs.")
-        return
-
-    print(f"[INFO] {len(texts)} chunks extraídos. Gerando embeddings...")
-    add_chunks_to_index(texts)
-    print("[SUCCESS] Índice FAISS atualizado com sucesso.")
-
-
-def add_chunks_to_index(chunks: list):
-    """
-    Add a list of text chunks to the FAISS index and update the chunks
-    database.
-
-    Args:
-        chunks (list): List of text chunks to be embedded and added.
-    """
-    global chunks_db, index
-    embeddings = model.encode(chunks)
-    index.add(np.array(embeddings, dtype=np.float32))
-    chunks_db.extend(chunks)
-
-    faiss_store.save_faiss_index(index)
-    faiss_store.save_chunks(chunks_db)
-
-
-def search_similar_chunks(question: str, top_k: int = 5):
-    """
-    Search for the most similar text chunks to the given question using,
-    the FAISS index.
-
-    Args:
-        question (str): The input question to search for similar chunks.
-        top_k (int, optional): The number of top similar chunks to return.
-        Defaults to 5.
-
-    Returns:
-        list: A list of the most similar text chunks.
-    """
-    if not chunks_db:
+def search_similar_chunks(question: str, session_id: str, top_k: int = 5):
+    name = _collection_name(session_id)
+    if name not in [c.name for c in _qdrant.get_collections().collections]:
+        # sessão vazia
         return ["[ERROR] No documents processed yet."]
-    q_embed = model.encode([question])
-    D, I = index.search(np.array(q_embed, dtype=np.float32), top_k)
-    return [chunks_db[i] for i in I[0]]
+
+    q_emb = _model.encode([question], convert_to_numpy=True).astype(np.float32)[0]
+    res = _qdrant.search(
+        collection_name=name,
+        query_vector=q_emb.tolist(),
+        limit=top_k,
+        with_payload=True
+    )
+    if not res:
+        return ["No documents processed yet."]
+    return [hit.payload.get("text", "") for hit in res]
