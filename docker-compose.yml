@@ -3,10 +3,38 @@ services:
     build:
       context: .
       dockerfile: Dockerfile.ollama
+    environment:
+      - OLLAMA_MODEL  # Load from .env file
+      - OLLAMA_NUM_PARALLEL
+      - OLLAMA_KEEP_ALIVE
+      - OLLAMA_KV_CACHE_TYPE
+      - OLLAMA_NUM_THREAD
     ports:
       - "11434:11434"
     volumes:
       - ollama-data:/root/.ollama
+    healthcheck:
+      test: ["CMD-SHELL", "curl -fsS http://127.0.0.1:11434/api/tags | grep -q 'qwen2.5:3b-instruct'"]
+      interval: 10s
+      timeout: 5s
+      retries: 30
+    restart: unless-stopped
+    networks: [ragnet]
+    entrypoint: ["sh", "-c", "\
+      echo 'OLLAMA_MODEL is set to: $OLLAMA_MODEL'; \
+      if [ -z \"$OLLAMA_MODEL\" ]; then \
+        echo 'Error: OLLAMA_MODEL environment variable is not set'; \
+        exit 1; \
+      fi; \
+      ollama serve & \
+      for i in $(seq 1 180); do \
+        curl -fsS http://127.0.0.1:11434/ >/dev/null 2>&1 && break; \
+        sleep 1; \
+      done; \
+      if ! ollama list | awk '{print $1}' | grep -qx \"$OLLAMA_MODEL\"; then \
+        ollama pull \"$OLLAMA_MODEL\" || echo 'Failed to pull model'; \
+      fi; \
+      wait"]
 
   qdrant:
     image: qdrant/qdrant:latest
@@ -14,6 +42,7 @@ services:
       - "6333:6333"
     volumes:
       - qdrant_storage:/qdrant/storage
+    networks: [ragnet]
 
   rag-api:
     build:
@@ -27,15 +56,20 @@ services:
     environment:
       - OLLAMA_HOST=http://ollama:11434
       - QDRANT_URL=http://qdrant:6333
+      - OLLAMA_MODEL=qwen2.5:1.5b-instruct
     depends_on:
-      - ollama
-      - qdrant
+      ollama:
+        condition: service_healthy
+      qdrant:
+        condition: service_started
+    networks: [ragnet]
 
   ui:
     image: rag-challenge-rag-api
     container_name: rag-ui
     depends_on:
-      - rag-api
+      rag-api:
+        condition: service_started
     environment:
       BACKEND_URL: "http://rag-api:8000"
     working_dir: /app
@@ -43,6 +77,10 @@ services:
       - "8501:8501"
     command: ["streamlit", "run", "RAG-Challenge/streamlit_app/ui.py",
               "--server.port=8501", "--server.address=0.0.0.0"]
+    networks: [ragnet]
+
+networks:
+  ragnet:
 
 volumes:
   ollama-data:

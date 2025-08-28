@@ -8,9 +8,10 @@ class QuestionRequest(BaseModel):
     """Request model for submitting a question."""
 
     question: str
+    session_id: str
 
 
-class AnswerResponse(BaseModel):
+class AIResponse(BaseModel):
     """Response model containing the answer and references."""
 
     answer: str
@@ -23,3 +24,4 @@ class UploadResponse(BaseModel):
     message: str
     documents_indexed: int
     total_chunks: int
+    indexed_points: int

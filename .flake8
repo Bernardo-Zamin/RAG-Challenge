@@ -3,7 +3,7 @@ extend-ignore = E203
 docstring-convention = google
 
 max-complexity = 10
-max-line-length = 120
+max-line-length = 140
 
 percent-greedy=2
 format-greedy=2

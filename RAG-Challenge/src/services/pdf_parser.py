@@ -1,60 +1,48 @@
-"""PDF parsing utilities for extracting and chunking text from PDF files."""
-import os
-import fitz
-from typing import List
+import math
+from typing import List, Dict
+import fitz  # PyMuPDF
 
+# tamanhos “seguros” pro MiniLM (char-based) — ajuste se preferir
+CHUNK_SIZE = 1000
+CHUNK_OVERLAP = 150
 
-def extract_text_and_chunk(
-    file_path: str, max_chunk_size: int = 500
-) -> List[str]:
-    """
-    Extract text from a PDF file and split it into chunks of a specified
-    maximum size.
-
-    Args:
-        file_path (str): The path to the PDF file.
-        max_chunk_size (int, optional): The maximum size of each text chunk.
-            Defaults to 500.
-
-    Returns:
-        List[str]: A list of text chunks extracted from the PDF.
-    """
-
-    doc = fitz.open(file_path)
+def _split_text(text: str, chunk_size: int, overlap: int):
     chunks = []
+    start = 0
+    n = len(text)
+    while start < n:
+        end = min(n, start + chunk_size)
+        # tenta cortar no último espaço pra evitar quebrar palavras
+        cut = text.rfind(" ", start, end)
+        if cut == -1 or cut <= start + chunk_size * 0.5:
+            cut = end
+        chunks.append(text[start:cut].strip())
+        start = max(cut - overlap, 0)
+        if cut == n:
+            break
+    return [c for c in chunks if c]
 
-    for page in doc:
-        text = page.get_text()
-        paragraphs = text.split("\n")
-
-        current_chunk = ""
-        for para in paragraphs:
-            if len(current_chunk) + len(para) <= max_chunk_size:
-                current_chunk += " " + para
-            else:
-                chunks.append(current_chunk.strip())
-                current_chunk = para
-        if current_chunk:
-            chunks.append(current_chunk.strip())
-
-    return chunks
-
-
-def extract_text_and_chunk_with_meta(path: str):
+def extract_text_and_chunk(path: str) -> List[Dict]:
     """
-    Extract text chunks from a PDF file and return them along with metadata.
-
-    Args:
-        path (str): The path to the PDF file.
-
-    Returns:
-        tuple: A tuple containing a list of text chunks and a metadata
-            dictionary.
+    Lê o PDF em ordem de páginas e retorna lista de dicts:
+    { "id": str, "text": str, "meta": {"page": int, "source": str, "order": int} }
     """
-    chunks = extract_text_and_chunk(path)
-    meta = {
-        "file": os.path.basename(path),
-        "chunks": len(chunks),
-        "size_bytes": os.path.getsize(path),
-    }
-    return chunks, meta
+    out = []
+    doc = fitz.open(path)
+    order = 0
+    for pno in range(len(doc)):
+        page = doc[pno]
+        # get_text("blocks") mantém a ordem de layout (x0,y0,x1,y1, text, block_no, ...)
+        blocks = page.get_text("blocks")
+        # ordena por posição vertical e depois horizontal
+        blocks.sort(key=lambda b: (round(b[1], 1), round(b[0], 1)))
+        page_text = "\n".join([b[4] for b in blocks if b[4].strip()])
+        for chunk in _split_text(page_text, CHUNK_SIZE, CHUNK_OVERLAP):
+            out.append({
+                "id": f"{path}::p{pno+1}::o{order}",
+                "text": chunk,
+                "meta": {"page": pno + 1, "source": path, "order": order}
+            })
+            order += 1
+    doc.close()
+    return out

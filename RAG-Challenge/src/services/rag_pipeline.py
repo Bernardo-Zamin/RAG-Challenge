@@ -1,21 +1,53 @@
-from src.services.embeddings import search_similar_chunks
-from src.services.ollama_client import query_ollama
+from .embeddings import search
+from .ollama_client import query_ollama
 
-def answer_question(question: str, session_id: str, top_k: int = 5):
-    # busca contexto na coleção da sessão
-    similar_chunks = search_similar_chunks(question, session_id=session_id, top_k=top_k)
-    if similar_chunks and isinstance(similar_chunks, list):
-        context = "\n\n".join(similar_chunks)
-    else:
-        context = ""
+MAX_REFS_UI = 5  # mostra menos na UI
 
-    prompt = (
-        "You are an assistant that answers based on the CONTEXT below. "
-        "If there is not enough information, just say what you know but don't elaborate.\n\n"
-        f"CONTEXT:\n{context}\n\n"
-        f"QUESTION: {question}\n\n"
-        "ANSWER:"
+
+def _build_prompt(question: str, contexts: list[dict]) -> str:
+    ctx = "\n\n".join(
+        [f"[p.{c['page']} #{c['order']}] {c['text']}" for c in contexts]
+    )
+    return (
+        "You are a concise assistant. Prefer using the provided *Context* to answer the *Question*. "
+        "If the *Context* (PDF) doesn’t contain the answer or isn’t relevant, answer from your own knowledge. "
+        "Do not fabricate details from the Context; if unsure, say you don't know briefly. "
+        "Reply in the same language as the Question.\n\n"
+        f"*Context*:\n{ctx}\n\n"
+        f"*Question*: {question}\n"
+        "Answer:"
     )
 
+
+def answer_question(question: str, session_id: str, source: str | None = None):
+    """
+    Answers a question using retrieved context and a language model.
+
+    Args:
+        question (str): The question to answer.
+        session_id (str): The session identifier for context retrieval.
+        source (str | None, optional): The source to filter context. Defaults to None.
+
+    Returns:
+        dict: A dictionary with the answer and a list of reference snippets.
+    """
+    ctx = search(question, session_id, top_k=8, source=source)
+    prompt = _build_prompt(question, ctx)
     answer = query_ollama(prompt)
-    return {"answer": answer, "references": similar_chunks or []}
+
+    # smaller refs for UI
+    ui_refs = []
+    seen = set()
+    for c in ctx:
+        key = (c["source"], c["page"], c["order"])
+        if key in seen:
+            continue
+        seen.add(key)
+        snippet = c["text"].strip()
+        if len(snippet) > 300:
+            snippet = snippet[:300] + "..."
+        ui_refs.append(f"p.{c['page']} • {snippet}")
+        if len(ui_refs) >= MAX_REFS_UI:
+            break
+
+    return {"answer": answer, "references": ui_refs}

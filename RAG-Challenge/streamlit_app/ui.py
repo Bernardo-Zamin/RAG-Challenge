@@ -1,21 +1,25 @@
-# RAG-Challenge/streamlit_app/ui.py
+"""
+Streamlit UI for the RAG Challenge application.
+
+Handling chat and PDF document interactions.
+"""
+
 import streamlit as st
 from streamlit_app import utils
 
-st.set_page_config(page_title="RAG Challenge", page_icon="🧠", layout="centered")
+st.set_page_config(page_title="RAG Challenge", layout="centered")
 
-# --- session boot ---
 if "session_id" not in st.session_state:
     try:
         st.session_state.session_id = utils.start_chat()
     except Exception:
-        st.error("Backend ainda iniciando… tente novamente em alguns segundos.")
+        st.error("Backend is still starting… please try again in few seconds")
         st.stop()
 if "messages" not in st.session_state:
     st.session_state.messages = []
 
-st.sidebar.title("📄 Documents")
-new_chat = st.sidebar.button("🧹 New chat (reset vectors)")
+st.sidebar.title("Documents")
+new_chat = st.sidebar.button("New chat")
 if new_chat:
     st.session_state.session_id = utils.start_chat()
     st.session_state.messages = []
@@ -37,12 +41,12 @@ if uploaded and st.sidebar.button("Index PDFs"):
         f"{resp.get('indexed_points',0)} vectors."
     )
 
-st.title("💬 Chat RAG")
+st.title("RAG Chat")
 for m in st.session_state.messages:
     with st.chat_message(m["role"]):
         st.markdown(m["content"])
         if m["role"] == "assistant" and m.get("references"):
-            with st.expander("🔎 Used parts (context)"):
+            with st.expander("Used parts (context)"):
                 for i, ref in enumerate(m["references"], start=1):
                     st.markdown(f"**{i}.** {ref}")
 
@@ -59,11 +63,9 @@ if user_msg:
         refs = resp.get("references", [])
         st.markdown(answer)
         if refs:
-            with st.expander("🔎 Used parts (context)"):
+            with st.expander("Used parts (context)"):
                 for i, ref in enumerate(refs, start=1):
                     st.markdown(f"**{i}.** {ref}")
-        st.session_state.messages.append({
-            "role": "assistant",
-            "content": answer,
-            "references": refs
-        })
+        st.session_state.messages.append(
+            {"role": "assistant", "content": answer, "references": refs}
+        )

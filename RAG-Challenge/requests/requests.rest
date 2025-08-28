@@ -3,10 +3,10 @@ POST http://localhost:8000/documents
 Content-Type: multipart/form-data; boundary=----WebKitFormBoundary7MA4YWxkTrZu0gW
 
 ------WebKitFormBoundary7MA4YWxkTrZu0gW
-Content-Disposition: form-data; name="files"; filename="Untitled.pdf"
+Content-Disposition: form-data; name="files"; filename="T2_IA.pdf"
 Content-Type: application/pdf
 
-< /Users/bernardozamin/Documents/RAG-Challenge/Untitled.pdf
+< /Users/bernardozamin/Documents/RAG-Challenge/RAG-Challenge/data/uploaded_pdfs/T2_IA.pdf
 ------WebKitFormBoundary7MA4YWxkTrZu0gW--
 
 ###

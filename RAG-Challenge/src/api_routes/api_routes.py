@@ -1,76 +1,75 @@
-from fastapi import APIRouter, UploadFile, File, Form, HTTPException
-from fastapi.responses import JSONResponse
-from pydantic import BaseModel
+"""API routes for document upload, chat session, and question answering."""
+
+from fastapi import APIRouter, UploadFile, File, HTTPException, Form
 from typing import List
+from src.services import embeddings, rag_pipeline
+from src.models.models import AIResponse, UploadResponse, QuestionRequest
 import os
 import uuid
 
-from src.services import pdf_parser, rag_pipeline, embeddings
 
 router = APIRouter()
 
-# --- healthcheck para o Docker ---
-@router.get("/health")
-def health():
-    return {"status": "ok"}
 
-# --- inicializa nova sessão (coleção vazia) ---
-@router.post("/start_chat")
+@router.post("/start_chat", response_model=dict)
 def start_chat():
-    session_id = str(uuid.uuid4())
-    # cria/garante uma coleção vazia para esta sessão
-    embeddings.reset_session(session_id)
-    return {"session_id": session_id}
+    """Create a new chat session."""
+    return {"session_id": str(uuid.uuid4())}
 
-# --- upload/indexação de PDFs para a sessão ---
-@router.post("/documents")
+
+@router.post("/documents", response_model=UploadResponse)
 async def upload_documents(
-    files: List[UploadFile] = File(...),
-    session_id: str = Form(...)
-):
-    if not files:
-        raise HTTPException(status_code=400, detail="Nenhum arquivo enviado.")
-    if not session_id:
-        raise HTTPException(status_code=400, detail="Faltou session_id.")
+    session_id: str = Form(...), files: List[UploadFile] = File(...)
+) -> UploadResponse:
+    """
+    Upload PDF documents, save them to the server, index them for the given session,
+    and return statistics about the indexing process.
 
-    all_chunks = []
+    Args:
+        session_id (str): The unique identifier for the chat session.
+        files (List[UploadFile]): List of PDF files to upload and index.
+
+    Returns:
+        UploadResponse: Contains a message, number of documents indexed,
+                        total chunks processed, and indexed points.
+    """
+    all_chunks = 0
+    indexed = 0
     for file in files:
-        # salva o PDF (opcional; útil só pra debug/inspeção)
-        save_path = os.path.join("RAG-Challenge/data/uploaded_pdfs", file.filename)
-        os.makedirs(os.path.dirname(save_path), exist_ok=True)
-        with open(save_path, "wb") as f:
+        path = os.path.join("RAG-Challenge/data/uploaded_pdfs", file.filename)
+        with open(path, "wb") as f:
             f.write(await file.read())
-
-        # extrai texto + chunk
-        chunks = pdf_parser.extract_text_and_chunk(save_path)
-        all_chunks.extend(chunks)
-
-    # grava embeddings no vetor DB da sessão
-    indexed_points = embeddings.add_chunks_to_index(chunks=all_chunks, session_id=session_id)
-
-    return JSONResponse(
-        content={
-            "message": "Documents processed successfully",
-            "documents_indexed": len(files),
-            "total_chunks": len(all_chunks),
-            "indexed_points": indexed_points,
-        }
+        info = embeddings.index_pdf(path, session_id)
+        all_chunks += info["total_chunks"]
+        indexed += info["indexed_points"]
+    return UploadResponse(
+        message="Documents processed successfully",
+        documents_indexed=len(files),
+        total_chunks=all_chunks,
+        indexed_points=indexed,
     )
 
-# --- pergunta com RAG, por sessão ---
-class QuestionBody(BaseModel):
-    question: str
-    session_id: str
 
-@router.post("/question")
-def ask_question(payload: QuestionBody):
-    if not payload.question:
-        raise HTTPException(status_code=400, detail="Missing 'question'.")
-    if not payload.session_id:
-        raise HTTPException(status_code=400, detail="Missing 'session_id'.")
+@router.post("/question", response_model=AIResponse)
+async def ask_question(payload: QuestionRequest) -> AIResponse:
+    """
+    Answer a question for a given chat session using the RAG pipeline.
 
-    response = rag_pipeline.answer_question(
-        question=payload.question,
-        session_id=payload.session_id
+    Args:
+        payload (QuestionRequest): Contains the question and session_id.
+
+    Returns:
+        AIResponse: The answer and references from the RAG pipeline.
+    """
+    question = payload.question
+    session_id = payload.session_id
+    if not question or not session_id:
+        raise HTTPException(
+            status_code=400, detail="Missing 'question' or 'session_id'."
+        )
+
+    answer_data = rag_pipeline.answer_question(question, session_id)
+    return AIResponse(
+        answer=answer_data["answer"],
+        references=answer_data["references"],
     )
-    return response
