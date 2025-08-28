@@ -12,6 +12,7 @@ TIMEOUT = int(os.getenv("OLLAMA_TIMEOUT", "300"))
 RETRIES = int(os.getenv("OLLAMA_RETRIES", "2"))
 BACKOFF = int(os.getenv("OLLAMA_BACKOFF", "5"))
 
+
 def query_ollama(prompt: str) -> str:
     payload = {
         "model": OLLAMA_MODEL,
@@ -19,8 +20,10 @@ def query_ollama(prompt: str) -> str:
         "stream": False,
         "options": {
             "temperature": 0.2,
-            "num_predict": 512,
-            "num_ctx": 4096,   # Qwen accepts; adjust if you want higher/lower
+            "num_predict": 192,  # 128-256 is a good range; reduce here if needed
+            "num_ctx": 2048,     # 1536-2048 is usually enough
+            "num_thread": 8,     # matches env
+            "num_batch": 128,
         },
     }
     last_err = None
@@ -29,7 +32,9 @@ def query_ollama(prompt: str) -> str:
             r = requests.post(OLLAMA_URL, json=payload, timeout=TIMEOUT)
             # If error, show the body to facilitate debugging
             if r.status_code >= 400:
-                raise requests.HTTPError(f"{r.status_code} {r.reason}: {r.text}", response=r)
+                raise requests.HTTPError(
+                    f"{r.status_code} {r.reason}: {r.text}", response=r
+                )
             data = r.json()
             # /api/chat returns in data["message"]["content"]
             return data["message"]["content"]

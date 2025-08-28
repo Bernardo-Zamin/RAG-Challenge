@@ -8,7 +8,9 @@ services:
       - OLLAMA_NUM_PARALLEL
       - OLLAMA_KEEP_ALIVE
       - OLLAMA_KV_CACHE_TYPE
-      - OLLAMA_NUM_THREAD
+      - OLLAMA_NUM_THREAD  
+      - OLLAMA_FLASH_ATTENTION
+
     ports:
       - "11434:11434"
     volumes:

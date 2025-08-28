@@ -4,6 +4,9 @@ Streamlit UI for the RAG Challenge application.
 Handling chat and PDF document interactions.
 """
 
+import time
+import concurrent.futures as cf
+
 import streamlit as st
 from streamlit_app import utils
 
@@ -13,7 +16,7 @@ if "session_id" not in st.session_state:
     try:
         st.session_state.session_id = utils.start_chat()
     except Exception:
-        st.error("Backend is still starting… please try again in few seconds")
+        st.error("Backend is still starting… please try again in a few seconds")
         st.stop()
 if "messages" not in st.session_state:
     st.session_state.messages = []
@@ -57,8 +60,33 @@ if user_msg:
         st.markdown(user_msg)
 
     with st.chat_message("assistant"):
-        with st.spinner("Consulting…"):
-            resp = utils.ask_question(user_msg, st.session_state.session_id)
+        status = st.status("Consulting…", expanded=False)
+        timer_ph = st.empty()
+        start = time.perf_counter()
+
+        # >>> Do NOT access st.session_state inside the thread <<<
+        sid = st.session_state.session_id
+
+        def call_api(msg, session_id):
+            # No st.* calls here!
+            return utils.ask_question(msg, session_id)
+
+        try:
+            with cf.ThreadPoolExecutor(max_workers=1) as ex:
+                fut = ex.submit(call_api, user_msg, sid)
+                while not fut.done():
+                    elapsed = time.perf_counter() - start
+                    timer_ph.markdown(f" {elapsed:.1f}s")
+                    time.sleep(0.1)
+                resp = fut.result()
+        except Exception as e:
+            status.update(label="Error", state="error")
+            st.error(f"Failed while consulting: {e}")
+            raise
+
+        total = time.perf_counter() - start
+        timer_ph.markdown(f" **{total:.2f}s**")
+
         answer = resp.get("answer", "No answer.")
         refs = resp.get("references", [])
         st.markdown(answer)
@@ -66,6 +94,7 @@ if user_msg:
             with st.expander("Used parts (context)"):
                 for i, ref in enumerate(refs, start=1):
                     st.markdown(f"**{i}.** {ref}")
+
         st.session_state.messages.append(
             {"role": "assistant", "content": answer, "references": refs}
         )
