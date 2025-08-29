@@ -1,4 +1,3 @@
-# Dockerfile
 FROM python:3.11-slim
 
 WORKDIR /app
@@ -15,6 +14,9 @@ RUN pip install --no-cache-dir -r requirements.txt
 
 # Copy the API code
 COPY RAG-Challenge/ RAG-Challenge/
+
+# Copy env
+COPY .env /app/.env
 
 # Define the PYTHONPATH for the application
 ENV PYTHONPATH=/app/RAG-Challenge

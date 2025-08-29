@@ -6,6 +6,7 @@ from src.services import embeddings, rag_pipeline
 from src.models.models import AIResponse, UploadResponse, QuestionRequest
 import os
 import uuid
+from src.services.rag_pipeline import new_chat
 
 
 router = APIRouter()
@@ -14,6 +15,7 @@ router = APIRouter()
 @router.post("/start_chat", response_model=dict)
 def start_chat():
     """Create a new chat session."""
+    new_chat()
     return {"session_id": str(uuid.uuid4())}
 
 

@@ -1,6 +1,6 @@
 FROM ollama/ollama:latest
 
-# (Optional) Install curl for healthcheck utility
+# Install curl for healthcheck utility
 RUN apt-get update && apt-get install -y --no-install-recommends curl && rm -rf /var/lib/apt/lists/*
 
 # Start the Ollama server and pull the model

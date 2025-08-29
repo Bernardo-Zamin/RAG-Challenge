@@ -2,47 +2,50 @@ import math
 from typing import List, Dict
 import fitz  # PyMuPDF
 
-# tamanhos “seguros” pro MiniLM (char-based) — ajuste se preferir
-CHUNK_SIZE = 1000
-CHUNK_OVERLAP = 150
+import tiktoken
+
+# Configuração do tokenizer e limites
+TOKENIZER = tiktoken.get_encoding("cl100k_base")  # Escolha o tokenizer apropriado
+CHUNK_SIZE = 300  # Número máximo de tokens por chunk
+CHUNK_OVERLAP = 50  # Sobreposição em tokens entre chunks consecutivos
+
 
 def _split_text(text: str, chunk_size: int, overlap: int):
+    tokens = TOKENIZER.encode(text)  # Tokeniza o texto
     chunks = []
     start = 0
-    n = len(text)
+    n = len(tokens)
+
     while start < n:
         end = min(n, start + chunk_size)
-        # tenta cortar no último espaço pra evitar quebrar palavras
-        cut = text.rfind(" ", start, end)
-        if cut == -1 or cut <= start + chunk_size * 0.5:
-            cut = end
-        chunks.append(text[start:cut].strip())
-        start = max(cut - overlap, 0)
-        if cut == n:
-            break
-    return [c for c in chunks if c]
+        chunk_tokens = tokens[start:end]
+        chunks.append(
+            TOKENIZER.decode(chunk_tokens)
+        )  # Decodifica os tokens de volta para texto
+        start = max(end - overlap, 0)  # Aplica a sobreposição
+
+    return chunks
+
 
 def extract_text_and_chunk(path: str) -> List[Dict]:
-    """
-    Lê o PDF em ordem de páginas e retorna lista de dicts:
-    { "id": str, "text": str, "meta": {"page": int, "source": str, "order": int} }
-    """
     out = []
     doc = fitz.open(path)
     order = 0
+
     for pno in range(len(doc)):
         page = doc[pno]
-        # get_text("blocks") mantém a ordem de layout (x0,y0,x1,y1, text, block_no, ...)
-        blocks = page.get_text("blocks")
-        # ordena por posição vertical e depois horizontal
-        blocks.sort(key=lambda b: (round(b[1], 1), round(b[0], 1)))
-        page_text = "\n".join([b[4] for b in blocks if b[4].strip()])
-        for chunk in _split_text(page_text, CHUNK_SIZE, CHUNK_OVERLAP):
-            out.append({
-                "id": f"{path}::p{pno+1}::o{order}",
-                "text": chunk,
-                "meta": {"page": pno + 1, "source": path, "order": order}
-            })
+        # Extrai o texto da página inteira de forma simples
+        page_text = page.get_text("text").strip()
+        if page_text:  # Apenas adiciona se houver texto na página
+            out.append(
+                {
+                    "id": f"{path}::p{pno+1}::o{order}",
+                    "text": page_text,
+                    "meta": {"page": pno + 1, "source": path, "order": order},
+                }
+            )
             order += 1
+
     doc.close()
+    print(f"Generated {len(out)} chunks for {path}")
     return out

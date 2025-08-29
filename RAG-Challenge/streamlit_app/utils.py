@@ -4,7 +4,7 @@ import os
 import time
 import requests
 
-# In container: http://rag-api:8000 ; outside the container you can export BACKEND_URL  # noqa: E501
+# In the container: http://rag-api:8000 ; outside the container you can export BACKEND_URL  # noqa: E501
 API_BASE = os.getenv("BACKEND_URL", "http://rag-api:8000")
 
 
@@ -20,7 +20,7 @@ def _post(url, **kwargs):
             return requests.post(url, timeout=120, **kwargs)
         except requests.RequestException as e:
             last_err = e
-            time.sleep(1 + i)  # backoff
+            time.sleep(1 + i)
     raise last_err
 
 
