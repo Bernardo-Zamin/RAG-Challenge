@@ -1,71 +1,90 @@
-"""
-This module provides functions for embedding text chunks and searching for
-similar chunks using a FAISS index.
-"""
-
 from sentence_transformers import SentenceTransformer
-from src.vector_database import faiss_store
 import numpy as np
+from . import pdf_parser
+from ..vector_database.qdrant_store import QdrantStore
+from concurrent.futures import ThreadPoolExecutor
 
 model = SentenceTransformer("all-MiniLM-L6-v2")
-
-index = faiss_store.load_faiss_index()
-chunks_db = faiss_store.load_chunks()
+DIM = 384
 
 
-def build_index_from_pdfs(pdf_dir: str = "RAG-Challenge/data/uploaded_pdfs"):
+def ensure_store(session_id: str) -> QdrantStore:
     """
-    Parseia os PDFs, gera embeddings dos textos extraídos e salva o índice FAISS e os chunks.
+    Ensure a QdrantStore instance exists for the given session ID.
 
     Args:
-        pdf_dir (str): Caminho para o diretório contendo os PDFs.
-    """
-    from src.services import pdf_parser  # Import interno para evitar import circular
-
-    print("[INFO] Extraindo texto dos PDFs...")
-    texts = pdf_parser.extract_text_from_pdfs(pdf_dir)
-
-    if not texts:
-        print("[WARNING] Nenhum texto encontrado nos PDFs.")
-        return
-
-    print(f"[INFO] {len(texts)} chunks extraídos. Gerando embeddings...")
-    add_chunks_to_index(texts)
-    print("[SUCCESS] Índice FAISS atualizado com sucesso.")
-
-
-def add_chunks_to_index(chunks: list):
-    """
-    Add a list of text chunks to the FAISS index and update the chunks
-    database.
-
-    Args:
-        chunks (list): List of text chunks to be embedded and added.
-    """
-    global chunks_db, index
-    embeddings = model.encode(chunks)
-    index.add(np.array(embeddings, dtype=np.float32))
-    chunks_db.extend(chunks)
-
-    faiss_store.save_faiss_index(index)
-    faiss_store.save_chunks(chunks_db)
-
-
-def search_similar_chunks(question: str, top_k: int = 5):
-    """
-    Search for the most similar text chunks to the given question using,
-    the FAISS index.
-
-    Args:
-        question (str): The input question to search for similar chunks.
-        top_k (int, optional): The number of top similar chunks to return.
-        Defaults to 5.
+        session_id (str): The session identifier.
 
     Returns:
-        list: A list of the most similar text chunks.
+        QdrantStore: An instance of QdrantStore for the session.
     """
-    if not chunks_db:
-        return ["[ERROR] No documents processed yet."]
-    q_embed = model.encode([question])
-    D, I = index.search(np.array(q_embed, dtype=np.float32), top_k)
-    return [chunks_db[i] for i in I[0]]
+    return QdrantStore(collection=f"session_{session_id}", dim=DIM)
+
+
+def encode_texts(texts: list) -> np.ndarray:
+    """
+    Encode a list of texts into embeddings using the SentenceTransformer model.
+
+    Args:
+        texts (list): List of text strings to encode.
+
+    Returns:
+        np.ndarray: Array of embeddings as float32.
+    """
+    embs = model.encode(
+        texts,
+        batch_size=64,
+        convert_to_numpy=True,
+        show_progress_bar=False
+    )
+    return embs.astype(np.float32)
+
+
+def index_pdf(path: str, session_id: str) -> dict:
+    """
+    Extracts text from a PDF, encodes the text chunks, and indexes them in the vector store for the given session.
+
+    Args:
+        path (str): The file path to the PDF document.
+        session_id (str): The session identifier.
+
+    Returns:
+        dict: A dictionary containing the total number of chunks and indexed points.
+    """
+    store = ensure_store(session_id)
+    chunks = pdf_parser.extract_text_and_chunk(path)
+
+    # Parallelize text encoding
+    with ThreadPoolExecutor() as executor:
+        embs = list(
+            executor.map(
+                lambda c: encode_texts([c["text"]])[0],
+                chunks
+            )
+        )
+
+    store.upsert(embs, chunks)
+    return {"total_chunks": len(chunks), "indexed_points": len(chunks)}
+
+
+def search(
+    question: str,
+    session_id: str,
+    top_k: int = 3,
+    source: str | None = None
+):
+    """
+    Search for relevant chunks in the vector store based on the input question.
+
+    Args:
+        question (str): The query string to search for.
+        session_id (str): The session identifier.
+        top_k (int, optional): Number of top results to return. Defaults to 3.
+        source (str | None, optional): Optional source filter. Defaults to None.
+
+    Returns:
+        list: Search results from the vector store.
+    """
+    store = ensure_store(session_id)
+    q = encode_texts([question])[0]
+    return store.search(q, top_k=top_k, source_filter=source)

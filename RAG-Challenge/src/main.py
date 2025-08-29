@@ -6,10 +6,8 @@ from src.api_routes.api_routes import router as api_router
 
 app = FastAPI(
     title="RAG Challenge API",
-    description=(
-        "API to upload PDFs and questions via RAG with local LLM (Ollama)"
-    ),
-    version="1.0.0"
+    description=("API to upload PDFs and questions via RAG with local LLM (Ollama)"),
+    version="2.0.0",
 )
 
 # Allow access to Streamlit UI

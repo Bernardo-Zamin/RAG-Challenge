@@ -1,8 +1,7 @@
 FROM ollama/ollama:latest
 
-RUN apt-get update && apt-get install -y curl
+# Install curl for healthcheck utility
+RUN apt-get update && apt-get install -y --no-install-recommends curl && rm -rf /var/lib/apt/lists/*
 
-COPY entrypoint.sh /entrypoint.sh
-RUN chmod +x /entrypoint.sh
-
-ENTRYPOINT ["/entrypoint.sh"]
+# Start the Ollama server and pull the model
+CMD ollama serve --model "${OLLAMA_MODEL:-qwen2.5:3b-instruct}"
