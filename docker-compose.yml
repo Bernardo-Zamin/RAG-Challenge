@@ -4,7 +4,7 @@ services:
       context: .
       dockerfile: Dockerfile.ollama
     environment:
-      - OLLAMA_MODEL  # Load from .env file
+      - OLLAMA_MODEL  # Load all flags this from .env file
       - OLLAMA_NUM_PARALLEL
       - OLLAMA_KEEP_ALIVE
       - OLLAMA_KV_CACHE_TYPE
