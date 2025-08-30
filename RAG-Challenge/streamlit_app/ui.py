@@ -255,23 +255,60 @@ if user_msg:
         status = st.empty()
         t0 = time.time()
         try:
-            status.markdown("⌛ Working… fetching context and generating an answer…")
-            with cf.ThreadPoolExecutor(max_workers=1) as ex:
-                fut = ex.submit(
-                    utils.ask_question, user_msg, st.session_state.session_id
-                )
-                resp = fut.result()
+            with st.status(
+                "Working… fetching context and generating an answer…", expanded=False
+            ) as st_status:
+                with cf.ThreadPoolExecutor(max_workers=1) as ex:
+                    fut = ex.submit(
+                        utils.ask_question, user_msg, st.session_state.session_id
+                    )
+                    resp = fut.result()
+
+                total = time.time() - t0
+                answer = resp.get("answer", "No answer.")
+                refs = resp.get("references", [])
+
+                st_status.update(label="Answer ready", state="complete", expanded=False)
+
+            st.markdown(
+                f"<div class='chat-bubble bot-bubble'>{answer}</div>",
+                unsafe_allow_html=True,
+            )
+            st.markdown(
+                f"<div class='exec-time'>Execution time: {total:.2f}s</div>",
+                unsafe_allow_html=True,
+            )
+
+            if refs:
+                with st.expander("📎 References used (context)"):
+                    for i, ref in enumerate(refs, start=1):
+                        st.markdown(f"**{i}.** {ref}")
+
+            st.session_state.messages.append(
+                {"role": "assistant", "content": answer, "references": refs}
+            )
+
+        except Exception:
+            with st.spinner("Working… fetching context and generating an answer…"):
+                with cf.ThreadPoolExecutor(max_workers=1) as ex:
+                    fut = ex.submit(
+                        utils.ask_question, user_msg, st.session_state.session_id
+                    )
+                    resp = fut.result()
 
             total = time.time() - t0
             answer = resp.get("answer", "No answer.")
             refs = resp.get("references", [])
 
-            status.empty()
             st.markdown(
                 f"<div class='chat-bubble bot-bubble'>{answer}</div>",
                 unsafe_allow_html=True,
             )
-            st.markdown(f"**Execution time:** {total:.2f}s")
+            st.markdown(
+                f"<div class='exec-time'>Execution time: {total:.2f}s</div>",
+                unsafe_allow_html=True,
+            )
+
             if refs:
                 with st.expander("📎 References used (context)"):
                     for i, ref in enumerate(refs, start=1):
@@ -282,5 +319,4 @@ if user_msg:
             )
 
         except Exception as e:
-            status.empty()
             st.error(f"Error while processing your question: {e}")

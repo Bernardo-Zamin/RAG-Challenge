@@ -3,6 +3,8 @@
 ## Overview
 This project implements a Retrieval-Augmented Generation (RAG) chatbot system that enhances Large Language Model responses with relevant context from a knowledge base. The system retrieves information from documents, embeds them, and uses semantic search to supplement the LLM's generation capabilities.
 
+Here is a link to see the video demo: https://drive.google.com/drive/my-drive?hl=pt-br
+
 ![RAG System Architecture Diagram - Add visualization of your RAG system here](readme/ui-image.png)
 
 ## Features
